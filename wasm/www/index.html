@@ -646,7 +646,7 @@
               >Loading the converter&hellip;</span
             >
             <span class="small" id="drop-hint"
-              >a few MB of WebAssembly, downloaded once</span
+              >a few MB of WebAssembly, cached in this browser for next time</span
             >
           </button>
           <input type="file" id="file" hidden />
@@ -780,10 +780,71 @@
         toMarkdownBytes,
       } from './pkg/anydoc_wasm.js';
 
+      const WASM_CACHE_NAME = 'anydoc-wasm-__WASM_HASH__';
+      const WASM_URL = new URL('./pkg/anydoc_wasm_bg.wasm', import.meta.url);
       const $ = (id) => document.getElementById(id);
       const dropTitle = $('drop-title');
       const dropHint = $('drop-hint');
       const output = $('output');
+
+      // CacheStorage persists across visits. The Pages build puts the WASM
+      // content hash in this cache name, so it is reused until the converter
+      // itself changes (not just when the page is edited).
+      async function removeOldWasmCaches() {
+        try {
+          const oldCaches = (await caches.keys()).filter(
+            (name) =>
+              name.startsWith('anydoc-wasm-') && name !== WASM_CACHE_NAME,
+          );
+          await Promise.all(oldCaches.map((name) => caches.delete(name)));
+        } catch (error) {
+          console.warn('Could not remove old anydoc caches:', error);
+        }
+      }
+
+      async function initConverter() {
+        if (!('caches' in window)) {
+          await init();
+          return;
+        }
+
+        let cache;
+        try {
+          cache = await caches.open(WASM_CACHE_NAME);
+          const cached = await cache.match(WASM_URL);
+          if (cached) {
+            try {
+              await init(cached);
+              await removeOldWasmCaches();
+              return;
+            } catch (error) {
+              try {
+                await cache.delete(WASM_URL);
+              } catch {
+                // Continue to the network even if a stale entry can't be removed.
+              }
+              console.warn('Discarding an unusable cached converter:', error);
+            }
+          }
+        } catch (error) {
+          console.warn('Could not read the local converter cache:', error);
+          await init();
+          return;
+        }
+
+        const response = await fetch(WASM_URL);
+        if (!response.ok) {
+          throw new Error(`Could not load the converter (${response.status})`);
+        }
+        await init(response.clone());
+        try {
+          await cache.put(WASM_URL, response);
+        } catch (error) {
+          // Conversion remains available if browser storage is full or disabled.
+          console.warn('Could not save the converter in this browser:', error);
+        }
+        await removeOldWasmCaches();
+      }
 
       let markdown = '';
       let baseName = 'document';
@@ -883,10 +944,10 @@
       });
 
       try {
-        await init();
+        await initConverter();
         dropTitle.textContent = 'Drop a document here';
         dropHint.innerHTML =
-          'or <u>browse</u> for one. Conversion happens locally, nothing is uploaded.';
+          'or <u>browse</u> for one. Files stay local; the converter is cached here for next time.';
       } catch (error) {
         dropTitle.textContent = 'The converter failed to load';
         dropHint.textContent = String(error?.message ?? error);
