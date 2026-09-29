@@ -35,6 +35,12 @@ jobs:
         run: |
           mkdir -p _site
           cp -r wasm/www/. _site/
+          # Key the persistent browser cache to the actual WASM contents. This
+          # updates clients when the converter changes without invalidating it
+          # for unrelated site edits.
+          wasm_hash=$(sha256sum _site/pkg/anydoc_wasm_bg.wasm | awk '{print $1}')
+          sed "s/__WASM_HASH__/${wasm_hash}/g" _site/index.html > _site/index.html.tmp
+          mv _site/index.html.tmp _site/index.html
           rm -f _site/pkg/.gitignore
       - uses: actions/upload-pages-artifact@v4
         with:

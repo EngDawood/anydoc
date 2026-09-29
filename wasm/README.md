@@ -80,4 +80,4 @@ wasm-pack build wasm --release --target web --no-pack --out-dir www/pkg
 python -m http.server -d wasm/www
 ```
 
-[`../.github/workflows/pages.yml`](../.github/workflows/pages.yml) builds and deploys the same layout to GitHub Pages on every push to main.
+[`../.github/workflows/pages.yml`](../.github/workflows/pages.yml) builds and deploys the same layout to GitHub Pages on every push to main. The demo stores the WASM binary in the browser's Cache Storage; repeat visits load the cached binary, and a new binary automatically gets a new cache key. Browsers can still clear or evict site storage.
